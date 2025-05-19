@@ -5,233 +5,209 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Gestion Présence</title>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    max-width: 480px;
-    margin: auto;
-    padding: 1em;
-    background: #f4f6f8;
-  }
-  h1 {
-    text-align: center;
-    color: #333;
-  }
-  select, button {
-    width: 100%;
-    padding: 0.6em;
-    margin: 0.5em 0 1em 0;
-    font-size: 1em;
-  }
-  .eleve-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.4em;
-    padding: 0.4em;
-    background: white;
-    border-radius: 4px;
-  }
-  .eleve-row:nth-child(even) {
-    background: #e9ecef;
-  }
-  .status-select {
-    width: 130px;
-    padding: 0.2em 0.4em;
-    font-size: 0.9em;
-  }
-  .status-present { background-color: #c8e6c9; }
-  .status-absent { background-color: #ffcdd2; }
-  .status-retard { background-color: #fff9c4; }
-  .status-absentjust { background-color: #bbdefb; }
-  #message {
-    margin-top: 1em;
-    font-weight: bold;
-    text-align: center;
-  }
+  body { font-family: Arial, sans-serif; margin: 20px; max-width: 500px; }
+  select, input, button { font-size: 1rem; padding: 8px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+  .eleve { display: flex; justify-content: space-between; margin: 5px 0; padding: 6px; border-bottom: 1px solid #ccc; }
+  .status-select { width: 150px; }
+  .status-Present { background-color: #b6f1b0; }
+  .status-Absent { background-color: #f1b0b0; }
+  .status-Retard { background-color: #f1e4b0; }
+  .status-Justifié { background-color: #b0d0f1; }
+  #terminer { margin-top: 15px; padding: 10px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+  #terminer:disabled { background-color: #ccc; cursor: not-allowed; }
 </style>
 </head>
 <body>
 
-<h1>Gestion des présences</h1>
+<h1>Gestion Présence</h1>
 
-<label for="groupeSelect">Choisir un groupe :</label>
-<select id="groupeSelect">
-  <option value="">-- Sélectionnez un groupe --</option>
+<label for="groupe">Choisir un groupe :</label>
+<select id="groupe">
+  <option value="">-- Sélectionner --</option>
   <option value="Présence G1">Présence G1</option>
   <option value="Présence G2">Présence G2</option>
   <option value="Présence CVnews">Présence CVnews</option>
 </select>
 
-<label for="dateSelect">Choisir une date :</label>
-<select id="dateSelect" disabled>
-  <option value="">-- Sélectionnez une date --</option>
+<label for="dateSelect">Choisir une date existante :</label>
+<select id="dateSelect">
+  <option value="">-- Aucune date sélectionnée --</option>
 </select>
 
-<div id="elevesContainer"></div>
+<label for="newDate">Ou entrer une nouvelle date (jj/mm/aa) :</label>
+<input type="text" id="newDate" placeholder="Ex: 19/05/25" />
 
-<button id="terminerBtn" disabled>Terminer l'appel</button>
+<button id="charger" disabled>Charger les élèves</button>
 
-<div id="message"></div>
+<div id="elevesList"></div>
+
+<button id="terminer" disabled>Terminer et enregistrer</button>
 
 <script>
-const scriptUrl = "https://script.google.com/macros/s/AKfycbzimXMnSzIMCN9Ei39GwWmK8R18zX0F1iGMFjf5EflGSNnGY4yrGxGRYinr5qNud5Qtqw/exec";
+  const scriptUrl = "https://script.google.com/macros/s/AKfycby0sHNai_892qCUokGvRldXDKbikrRo3SseZbwmMAAK5yulcFIr-EcReLU3xmWRnm2djw/exec";
 
-const groupeSelect = document.getElementById("groupeSelect");
-const dateSelect = document.getElementById("dateSelect");
-const elevesContainer = document.getElementById("elevesContainer");
-const terminerBtn = document.getElementById("terminerBtn");
-const messageDiv = document.getElementById("message");
+  const groupeSelect = document.getElementById('groupe');
+  const dateSelect = document.getElementById('dateSelect');
+  const newDateInput = document.getElementById('newDate');
+  const chargerBtn = document.getElementById('charger');
+  const elevesListDiv = document.getElementById('elevesList');
+  const terminerBtn = document.getElementById('terminer');
 
-let currentEleves = [];
-let currentPresences = [];
-let currentGroupe = "";
-let currentDate = "";
+  let eleves = [];
+  let presences = [];
+  let currentDate = "";
+  let currentGroupe = "";
 
-// Statuts possibles
-const statuts = [
-  { value: "", label: "—" },
-  { value: "présent", label: "Présent", className: "status-present" },
-  { value: "absent", label: "Absent", className: "status-absent" },
-  { value: "retard", label: "Retard", className: "status-retard" },
-  { value: "absent justifié", label: "Absent Justifié", className: "status-absentjust" }
-];
-
-// Lors du choix du groupe, on récupère les dates
-groupeSelect.addEventListener("change", async () => {
-  clearMessage();
-  currentGroupe = groupeSelect.value;
-  currentDate = "";
-  dateSelect.innerHTML = '<option value="">-- Sélectionnez une date --</option>';
-  elevesContainer.innerHTML = "";
-  terminerBtn.disabled = true;
-  dateSelect.disabled = true;
-  if (!currentGroupe) return;
-
-  try {
-    const res = await fetch(`${scriptUrl}?mode=dates&groupe=${encodeURIComponent(currentGroupe)}`);
-    const data = await res.json();
-    if (data.dates.length === 0) {
-      // Pas de dates, on propose la date d'aujourd'hui par défaut
-      const today = new Date();
-      const todayStr = formatDate(today);
-      dateSelect.innerHTML += `<option value="${todayStr}">${todayStr} (nouvelle date)</option>`;
-    } else {
-      data.dates.forEach(d => {
-        dateSelect.innerHTML += `<option value="${d}">${d}</option>`;
-      });
-      // Ajouter aussi la date d'aujourd'hui si pas déjà présente
-      const today = formatDate(new Date());
-      if (!data.dates.includes(today)) {
-        dateSelect.innerHTML += `<option value="${today}">${today} (nouvelle date)</option>`;
-      }
-    }
-    dateSelect.disabled = false;
-  } catch (e) {
-    showMessage("Erreur lors du chargement des dates");
-  }
-});
-
-// Lors du choix de la date, on récupère la liste des élèves + présences
-dateSelect.addEventListener("change", async () => {
-  clearMessage();
-  currentDate = dateSelect.value;
-  elevesContainer.innerHTML = "";
-  terminerBtn.disabled = true;
-  if (!currentDate || !currentGroupe) return;
-
-  try {
-    const res = await fetch(`${scriptUrl}?mode=eleves&groupe=${encodeURIComponent(currentGroupe)}&date=${encodeURIComponent(currentDate)}`);
-    const data = await res.json();
-    currentEleves = data.eleves || [];
-    currentPresences = data.presences || [];
-
-    elevesContainer.innerHTML = "";
-
-    currentEleves.forEach((eleve, i) => {
-      const pres = currentPresences[i] || "";
-      const div = document.createElement("div");
-      div.className = "eleve-row";
-      div.innerHTML = `
-        <div>${eleve}</div>
-        <select class="status-select" data-index="${i}">
-          ${statuts.map(s => `<option value="${s.value}" ${s.value === pres ? "selected" : ""}>${s.label}</option>`).join("")}
-        </select>
-      `;
-      elevesContainer.appendChild(div);
-    });
-
-    // Coloration initiale
-    updateColors();
-
-    terminerBtn.disabled = false;
-  } catch (e) {
-    showMessage("Erreur lors du chargement des élèves");
-  }
-});
-
-// Met à jour les couleurs selon les statuts
-function updateColors() {
-  document.querySelectorAll(".status-select").forEach(select => {
-    const val = select.value;
-    select.className = "status-select"; // reset
-    const status = statuts.find(s => s.value === val);
-    if (status && status.className) {
-      select.classList.add(status.className);
+  groupeSelect.addEventListener('change', () => {
+    currentGroupe = groupeSelect.value;
+    elevesListDiv.innerHTML = "";
+    presences = [];
+    eleves = [];
+    terminerBtn.disabled = true;
+    chargerBtn.disabled = !currentGroupe;
+    dateSelect.innerHTML = '<option value="">-- Aucune date sélectionnée --</option>';
+    newDateInput.value = "";
+    if (currentGroupe) {
+      loadDates(currentGroupe);
     }
   });
-}
 
-// Quand on change un statut, on colore la case
-elevesContainer.addEventListener("change", (e) => {
-  if (e.target.classList.contains("status-select")) {
-    updateColors();
-  }
-});
+  dateSelect.addEventListener('change', () => {
+    newDateInput.value = "";
+  });
 
-// Bouton terminer
-terminerBtn.addEventListener("click", async () => {
-  clearMessage();
-  terminerBtn.disabled = true;
+  newDateInput.addEventListener('input', () => {
+    dateSelect.value = "";
+  });
 
-  // Récupérer le tableau des présences sélectionnées
-  const presences = Array.from(document.querySelectorAll(".status-select")).map(s => s.value);
+  chargerBtn.addEventListener('click', () => {
+    currentDate = dateSelect.value || newDateInput.value.trim();
+    if (!currentDate) {
+      alert("Merci de choisir ou entrer une date valide");
+      return;
+    }
+    loadEleves(currentGroupe, currentDate);
+  });
 
-  try {
-    const res = await fetch(scriptUrl, {
-      method: "POST",
-      body: JSON.stringify({
-        groupe: currentGroupe,
-        date: currentDate,
-        presence: presences
-      }),
-      headers: {
-        "Content-Type": "application/json"
+  terminerBtn.addEventListener('click', () => {
+    savePresences();
+  });
+
+  // JSONP helper
+  function jsonp(url) {
+    return new Promise((resolve, reject) => {
+      const callbackName = 'cb_' + Math.random().toString(36).substring(2);
+      window[callbackName] = function(data) {
+        resolve(data);
+        delete window[callbackName];
+        script.remove();
       }
+      const script = document.createElement('script');
+      script.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'callback=' + callbackName;
+      script.onerror = () => {
+        reject(new Error('Erreur JSONP'));
+        delete window[callbackName];
+        script.remove();
+      }
+      document.body.appendChild(script);
     });
-    const text = await res.text();
-    showMessage(text);
-  } catch (e) {
-    showMessage("Erreur lors de l'enregistrement");
-  } finally {
-    terminerBtn.disabled = false;
   }
-});
 
-function formatDate(date) {
-  // format jj/mm/aa
-  const d = ("0" + date.getDate()).slice(-2);
-  const m = ("0" + (date.getMonth() + 1)).slice(-2);
-  const y = date.getFullYear().toString().slice(-2);
-  return `${d}/${m}/${y}`;
-}
+  async function loadDates(groupe) {
+    try {
+      const data = await jsonp(`${scriptUrl}?mode=dates&groupe=${encodeURIComponent(groupe)}`);
+      dateSelect.innerHTML = '<option value="">-- Aucune date sélectionnée --</option>';
+      if (data.dates.length === 0) {
+        dateSelect.innerHTML += '<option value="" disabled>Aucune date enregistrée</option>';
+      } else {
+        data.dates.forEach(d => {
+          dateSelect.innerHTML += `<option value="${d}">${d}</option>`;
+        });
+      }
+    } catch (err) {
+      alert("Erreur chargement dates : " + err.message);
+    }
+  }
 
-function showMessage(msg) {
-  messageDiv.textContent = msg;
-}
+  async function loadEleves(groupe, date) {
+    try {
+      elevesListDiv.innerHTML = "Chargement...";
+      const data = await jsonp(`${scriptUrl}?mode=eleves&groupe=${encodeURIComponent(groupe)}&date=${encodeURIComponent(date)}`);
+      eleves = data.eleves;
+      presences = data.presences;
 
-function clearMessage() {
-  messageDiv.textContent = "";
-}
+      if (eleves.length === 0) {
+        elevesListDiv.innerHTML = "<p>Aucun élève trouvé dans ce groupe.</p>";
+        terminerBtn.disabled = true;
+        return;
+      }
+
+      let html = "";
+      for(let i=0; i<eleves.length; i++) {
+        const statut = presences[i] || "";
+        html += `
+          <div class="eleve">
+            <div>${eleves[i]}</div>
+            <select class="status-select status-${statut.replace(/\s/g, '')}">
+              <option value="">--</option>
+              <option value="Présent" ${statut === "Présent" ? "selected" : ""}>Présent</option>
+              <option value="Absent" ${statut === "Absent" ? "selected" : ""}>Absent</option>
+              <option value="Retard" ${statut === "Retard" ? "selected" : ""}>Retard</option>
+              <option value="Absent Justifié" ${statut === "Absent Justifié" ? "selected" : ""}>Absent Justifié</option>
+            </select>
+          </div>
+        `;
+      }
+      elevesListDiv.innerHTML = html;
+
+      // Met à jour la couleur selon statut
+      Array.from(elevesListDiv.querySelectorAll('select')).forEach(sel => {
+        sel.addEventListener('change', (e) => {
+          e.target.className = 'status-select status-' + e.target.value.replace(/\s/g, '');
+        });
+      });
+
+      terminerBtn.disabled = false;
+    } catch (err) {
+      elevesListDiv.innerHTML = `<p>Erreur chargement élèves : ${err.message}</p>`;
+      terminerBtn.disabled = true;
+    }
+  }
+
+  async function savePresences() {
+    const selects = elevesListDiv.querySelectorAll('select');
+    const presenceData = [];
+
+    for (let i=0; i<selects.length; i++) {
+      presenceData.push({statut: selects[i].value});
+    }
+
+    const payload = {
+      groupe: currentGroupe,
+      date: currentDate,
+      presence: presenceData
+    };
+
+    try {
+      const res = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const text = await res.text();
+
+      if (text.includes("success")) {
+        alert("Présences enregistrées avec succès !");
+        // Optionnel : reset interface ou recharger dates
+        loadDates(currentGroupe);
+        terminerBtn.disabled = true;
+      } else {
+        alert("Erreur lors de l'enregistrement : " + text);
+      }
+    } catch (err) {
+      alert("Erreur réseau : " + err.message);
+    }
+  }
 </script>
 
 </body>
