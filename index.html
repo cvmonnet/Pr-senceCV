@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gestion Présences</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #f8f9fa;
+    padding: 20px;
+    max-width: 600px;
+    margin: auto;
+  }
+  h2, h3 {
+    color: #333;
+  }
+  select, button {
+    padding: 8px 12px;
+    font-size: 16px;
+    margin: 10px 0;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+  }
+  select {
+    width: 100%;
+  }
+  button {
+    background-color: #007bff;
+    border: none;
+    color: white;
+    cursor: pointer;
+  }
+  button:hover {
+    background-color: #0056b3;
+  }
+  label {
+    display: block;
+    margin: 8px 0 4px;
+  }
+  #eleves label {
+    font-weight: 500;
+  }
+  #eleves select {
+    width: auto;
+    margin-left: 10px;
+  }
+  .present {
+    background-color: #d4edda;
+  }
+  .absent {
+    background-color: #f8d7da;
+  }
+  .retard {
+    background-color: #fff3cd;
+  }
+  .absentjustifie {
+    background-color: #d1ecf1;
+  }
+</style>
+</head>
+<body>
+
+<h2>Gestion des présences</h2>
+
+<label for="groupeSelect">Sélectionner un groupe :</label>
+<select id="groupeSelect">
+  <option value="">-- Choisir un groupe --</option>
+  <option value="Présence G1">Présence G1</option>
+  <option value="Présence G2">Présence G2</option>
+  <option value="Présence CVnews">Présence CVnews</option>
+</select>
+
+<label for="dateSelect">Sélectionner une date :</label>
+<select id="dateSelect" disabled>
+  <option>Choisir une date</option>
+</select>
+
+<div id="eleves"></div>
+
+<script>
+  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzimXMnSzIMCN9Ei39GwWmK8R18zX0F1iGMFjf5EflGSNnGY4yrGxGRYinr5qNud5Qtqw/exec";
+
+  const groupeSelect = document.getElementById("groupeSelect");
+  const dateSelect = document.getElementById("dateSelect");
+  const elevesDiv = document.getElementById("eleves");
+
+  groupeSelect.addEventListener("change", () => {
+    dateSelect.innerHTML = '<option>Chargement...</option>';
+    dateSelect.disabled = true;
+    elevesDiv.innerHTML = "";
+
+    if (!groupeSelect.value) {
+      dateSelect.innerHTML = '<option>Choisir une date</option>';
+      dateSelect.disabled = true;
+      return;
+    }
+
+    fetch(`${SCRIPT_URL}?mode=dates&groupe=${encodeURIComponent(groupeSelect.value)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (!data.dates || data.dates.length === 0) {
+          dateSelect.innerHTML = '<option>Aucune date trouvée</option>';
+          dateSelect.disabled = true;
+          return;
+        }
+        dateSelect.innerHTML = '<option value="">-- Choisir une date --</option>' + data.dates.map(d => `<option value="${d}">${d}</option>`).join('');
+        dateSelect.disabled = false;
+      })
+      .catch(() => {
+        dateSelect.innerHTML = '<option>Erreur lors du chargement</option>';
+        dateSelect.disabled = true;
+      });
+  });
+
+  dateSelect.addEventListener("change", () => {
+    elevesDiv.innerHTML = "";
+    if (!dateSelect.value) return;
+
+    elevesDiv.innerHTML = "Chargement des élèves...";
+
+    fetch(`${SCRIPT_URL}?mode=eleves&groupe=${encodeURIComponent(groupeSelect.value)}&date=${encodeURIComponent(dateSelect.value)}`)
+      .then(res => res.json())
+      .then(data => {
+        elevesDiv.innerHTML = "";
+        if (!data.eleves || data.eleves.length === 0) {
+          elevesDiv.innerHTML = "Aucun élève trouvé.";
+          return;
+        }
+
+        data.eleves.forEach((eleve, i) => {
+          const statut = data.presences && data.presences[i] ? data.presences[i] : "";
+          const label = document.createElement("label");
+          label.textContent = eleve + " : ";
+
+          const select = document.createElement("select");
+          select.dataset.index = i;
+
+          ["", "présent", "absent", "retard", "absent justifié"].forEach(optionText => {
+            const option = document.createElement("option");
+            option.value = optionText;
+            option.textContent = optionText;
+            if(optionText === statut) option.selected = true;
+            select.appendChild(option);
+          });
+
+          label.appendChild(select);
+          elevesDiv.appendChild(label);
+        });
+
+        // Bouton Terminer
+        const btnTerminer = document.createElement("button");
+        btnTerminer.textContent = "Terminer";
+        btnTerminer.style.marginTop = "15px";
+
+        btnTerminer.onclick = () => {
+          const presences = [];
+          elevesDiv.querySelectorAll("select").forEach(select => {
+            presences.push(select.value);
+          });
+
+          fetch(SCRIPT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              groupe: groupeSelect.value,
+              date: dateSelect.value,
+              presence: presences
+            })
+          })
+          .then(res => res.text())
+          .then(msg => {
+            alert(msg);
+          })
+          .catch(err => {
+            alert("Erreur lors de l'enregistrement");
+            console.error(err);
+          });
+        };
+
+        elevesDiv.appendChild(document.createElement("br"));
+        elevesDiv.appendChild(btnTerminer);
+
+      })
+      .catch(() => {
+        elevesDiv.innerHTML = "Erreur lors du chargement des élèves.";
+      });
+  });
+</script>
+
+</body>
+</html>
