@@ -3,189 +3,235 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Gestion Présences</title>
+<title>Gestion Présence</title>
 <style>
   body {
     font-family: Arial, sans-serif;
-    background: #f8f9fa;
-    padding: 20px;
-    max-width: 600px;
+    max-width: 480px;
     margin: auto;
+    padding: 1em;
+    background: #f4f6f8;
   }
-  h2, h3 {
+  h1 {
+    text-align: center;
     color: #333;
   }
   select, button {
-    padding: 8px 12px;
-    font-size: 16px;
-    margin: 10px 0;
-    border-radius: 4px;
-    border: 1px solid #ccc;
-  }
-  select {
     width: 100%;
+    padding: 0.6em;
+    margin: 0.5em 0 1em 0;
+    font-size: 1em;
   }
-  button {
-    background-color: #007bff;
-    border: none;
-    color: white;
-    cursor: pointer;
+  .eleve-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.4em;
+    padding: 0.4em;
+    background: white;
+    border-radius: 4px;
   }
-  button:hover {
-    background-color: #0056b3;
+  .eleve-row:nth-child(even) {
+    background: #e9ecef;
   }
-  label {
-    display: block;
-    margin: 8px 0 4px;
+  .status-select {
+    width: 130px;
+    padding: 0.2em 0.4em;
+    font-size: 0.9em;
   }
-  #eleves label {
-    font-weight: 500;
-  }
-  #eleves select {
-    width: auto;
-    margin-left: 10px;
-  }
-  .present {
-    background-color: #d4edda;
-  }
-  .absent {
-    background-color: #f8d7da;
-  }
-  .retard {
-    background-color: #fff3cd;
-  }
-  .absentjustifie {
-    background-color: #d1ecf1;
+  .status-present { background-color: #c8e6c9; }
+  .status-absent { background-color: #ffcdd2; }
+  .status-retard { background-color: #fff9c4; }
+  .status-absentjust { background-color: #bbdefb; }
+  #message {
+    margin-top: 1em;
+    font-weight: bold;
+    text-align: center;
   }
 </style>
 </head>
 <body>
 
-<h2>Gestion des présences</h2>
+<h1>Gestion des présences</h1>
 
-<label for="groupeSelect">Sélectionner un groupe :</label>
+<label for="groupeSelect">Choisir un groupe :</label>
 <select id="groupeSelect">
-  <option value="">-- Choisir un groupe --</option>
+  <option value="">-- Sélectionnez un groupe --</option>
   <option value="Présence G1">Présence G1</option>
   <option value="Présence G2">Présence G2</option>
   <option value="Présence CVnews">Présence CVnews</option>
 </select>
 
-<label for="dateSelect">Sélectionner une date :</label>
+<label for="dateSelect">Choisir une date :</label>
 <select id="dateSelect" disabled>
-  <option>Choisir une date</option>
+  <option value="">-- Sélectionnez une date --</option>
 </select>
 
-<div id="eleves"></div>
+<div id="elevesContainer"></div>
+
+<button id="terminerBtn" disabled>Terminer l'appel</button>
+
+<div id="message"></div>
 
 <script>
-  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzimXMnSzIMCN9Ei39GwWmK8R18zX0F1iGMFjf5EflGSNnGY4yrGxGRYinr5qNud5Qtqw/exec";
+const scriptUrl = "https://script.google.com/macros/s/AKfycbzimXMnSzIMCN9Ei39GwWmK8R18zX0F1iGMFjf5EflGSNnGY4yrGxGRYinr5qNud5Qtqw/exec";
 
-  const groupeSelect = document.getElementById("groupeSelect");
-  const dateSelect = document.getElementById("dateSelect");
-  const elevesDiv = document.getElementById("eleves");
+const groupeSelect = document.getElementById("groupeSelect");
+const dateSelect = document.getElementById("dateSelect");
+const elevesContainer = document.getElementById("elevesContainer");
+const terminerBtn = document.getElementById("terminerBtn");
+const messageDiv = document.getElementById("message");
 
-  groupeSelect.addEventListener("change", () => {
-    dateSelect.innerHTML = '<option>Chargement...</option>';
-    dateSelect.disabled = true;
-    elevesDiv.innerHTML = "";
+let currentEleves = [];
+let currentPresences = [];
+let currentGroupe = "";
+let currentDate = "";
 
-    if (!groupeSelect.value) {
-      dateSelect.innerHTML = '<option>Choisir une date</option>';
-      dateSelect.disabled = true;
-      return;
+// Statuts possibles
+const statuts = [
+  { value: "", label: "—" },
+  { value: "présent", label: "Présent", className: "status-present" },
+  { value: "absent", label: "Absent", className: "status-absent" },
+  { value: "retard", label: "Retard", className: "status-retard" },
+  { value: "absent justifié", label: "Absent Justifié", className: "status-absentjust" }
+];
+
+// Lors du choix du groupe, on récupère les dates
+groupeSelect.addEventListener("change", async () => {
+  clearMessage();
+  currentGroupe = groupeSelect.value;
+  currentDate = "";
+  dateSelect.innerHTML = '<option value="">-- Sélectionnez une date --</option>';
+  elevesContainer.innerHTML = "";
+  terminerBtn.disabled = true;
+  dateSelect.disabled = true;
+  if (!currentGroupe) return;
+
+  try {
+    const res = await fetch(`${scriptUrl}?mode=dates&groupe=${encodeURIComponent(currentGroupe)}`);
+    const data = await res.json();
+    if (data.dates.length === 0) {
+      // Pas de dates, on propose la date d'aujourd'hui par défaut
+      const today = new Date();
+      const todayStr = formatDate(today);
+      dateSelect.innerHTML += `<option value="${todayStr}">${todayStr} (nouvelle date)</option>`;
+    } else {
+      data.dates.forEach(d => {
+        dateSelect.innerHTML += `<option value="${d}">${d}</option>`;
+      });
+      // Ajouter aussi la date d'aujourd'hui si pas déjà présente
+      const today = formatDate(new Date());
+      if (!data.dates.includes(today)) {
+        dateSelect.innerHTML += `<option value="${today}">${today} (nouvelle date)</option>`;
+      }
     }
+    dateSelect.disabled = false;
+  } catch (e) {
+    showMessage("Erreur lors du chargement des dates");
+  }
+});
 
-    fetch(`${SCRIPT_URL}?mode=dates&groupe=${encodeURIComponent(groupeSelect.value)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (!data.dates || data.dates.length === 0) {
-          dateSelect.innerHTML = '<option>Aucune date trouvée</option>';
-          dateSelect.disabled = true;
-          return;
-        }
-        dateSelect.innerHTML = '<option value="">-- Choisir une date --</option>' + data.dates.map(d => `<option value="${d}">${d}</option>`).join('');
-        dateSelect.disabled = false;
-      })
-      .catch(() => {
-        dateSelect.innerHTML = '<option>Erreur lors du chargement</option>';
-        dateSelect.disabled = true;
-      });
+// Lors du choix de la date, on récupère la liste des élèves + présences
+dateSelect.addEventListener("change", async () => {
+  clearMessage();
+  currentDate = dateSelect.value;
+  elevesContainer.innerHTML = "";
+  terminerBtn.disabled = true;
+  if (!currentDate || !currentGroupe) return;
+
+  try {
+    const res = await fetch(`${scriptUrl}?mode=eleves&groupe=${encodeURIComponent(currentGroupe)}&date=${encodeURIComponent(currentDate)}`);
+    const data = await res.json();
+    currentEleves = data.eleves || [];
+    currentPresences = data.presences || [];
+
+    elevesContainer.innerHTML = "";
+
+    currentEleves.forEach((eleve, i) => {
+      const pres = currentPresences[i] || "";
+      const div = document.createElement("div");
+      div.className = "eleve-row";
+      div.innerHTML = `
+        <div>${eleve}</div>
+        <select class="status-select" data-index="${i}">
+          ${statuts.map(s => `<option value="${s.value}" ${s.value === pres ? "selected" : ""}>${s.label}</option>`).join("")}
+        </select>
+      `;
+      elevesContainer.appendChild(div);
+    });
+
+    // Coloration initiale
+    updateColors();
+
+    terminerBtn.disabled = false;
+  } catch (e) {
+    showMessage("Erreur lors du chargement des élèves");
+  }
+});
+
+// Met à jour les couleurs selon les statuts
+function updateColors() {
+  document.querySelectorAll(".status-select").forEach(select => {
+    const val = select.value;
+    select.className = "status-select"; // reset
+    const status = statuts.find(s => s.value === val);
+    if (status && status.className) {
+      select.classList.add(status.className);
+    }
   });
+}
 
-  dateSelect.addEventListener("change", () => {
-    elevesDiv.innerHTML = "";
-    if (!dateSelect.value) return;
+// Quand on change un statut, on colore la case
+elevesContainer.addEventListener("change", (e) => {
+  if (e.target.classList.contains("status-select")) {
+    updateColors();
+  }
+});
 
-    elevesDiv.innerHTML = "Chargement des élèves...";
+// Bouton terminer
+terminerBtn.addEventListener("click", async () => {
+  clearMessage();
+  terminerBtn.disabled = true;
 
-    fetch(`${SCRIPT_URL}?mode=eleves&groupe=${encodeURIComponent(groupeSelect.value)}&date=${encodeURIComponent(dateSelect.value)}`)
-      .then(res => res.json())
-      .then(data => {
-        elevesDiv.innerHTML = "";
-        if (!data.eleves || data.eleves.length === 0) {
-          elevesDiv.innerHTML = "Aucun élève trouvé.";
-          return;
-        }
+  // Récupérer le tableau des présences sélectionnées
+  const presences = Array.from(document.querySelectorAll(".status-select")).map(s => s.value);
 
-        data.eleves.forEach((eleve, i) => {
-          const statut = data.presences && data.presences[i] ? data.presences[i] : "";
-          const label = document.createElement("label");
-          label.textContent = eleve + " : ";
+  try {
+    const res = await fetch(scriptUrl, {
+      method: "POST",
+      body: JSON.stringify({
+        groupe: currentGroupe,
+        date: currentDate,
+        presence: presences
+      }),
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+    const text = await res.text();
+    showMessage(text);
+  } catch (e) {
+    showMessage("Erreur lors de l'enregistrement");
+  } finally {
+    terminerBtn.disabled = false;
+  }
+});
 
-          const select = document.createElement("select");
-          select.dataset.index = i;
+function formatDate(date) {
+  // format jj/mm/aa
+  const d = ("0" + date.getDate()).slice(-2);
+  const m = ("0" + (date.getMonth() + 1)).slice(-2);
+  const y = date.getFullYear().toString().slice(-2);
+  return `${d}/${m}/${y}`;
+}
 
-          ["", "présent", "absent", "retard", "absent justifié"].forEach(optionText => {
-            const option = document.createElement("option");
-            option.value = optionText;
-            option.textContent = optionText;
-            if(optionText === statut) option.selected = true;
-            select.appendChild(option);
-          });
+function showMessage(msg) {
+  messageDiv.textContent = msg;
+}
 
-          label.appendChild(select);
-          elevesDiv.appendChild(label);
-        });
-
-        // Bouton Terminer
-        const btnTerminer = document.createElement("button");
-        btnTerminer.textContent = "Terminer";
-        btnTerminer.style.marginTop = "15px";
-
-        btnTerminer.onclick = () => {
-          const presences = [];
-          elevesDiv.querySelectorAll("select").forEach(select => {
-            presences.push(select.value);
-          });
-
-          fetch(SCRIPT_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              groupe: groupeSelect.value,
-              date: dateSelect.value,
-              presence: presences
-            })
-          })
-          .then(res => res.text())
-          .then(msg => {
-            alert(msg);
-          })
-          .catch(err => {
-            alert("Erreur lors de l'enregistrement");
-            console.error(err);
-          });
-        };
-
-        elevesDiv.appendChild(document.createElement("br"));
-        elevesDiv.appendChild(btnTerminer);
-
-      })
-      .catch(() => {
-        elevesDiv.innerHTML = "Erreur lors du chargement des élèves.";
-      });
-  });
+function clearMessage() {
+  messageDiv.textContent = "";
+}
 </script>
 
 </body>
